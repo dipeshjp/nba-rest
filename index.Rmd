@@ -1,6 +1,6 @@
 --- 
-title: "YOUR TITLE HERE"
-author: "YOUR NAMES HERE"
+title: "Exploring the Effects of Rest on Team Performance in the National Basketball Association"
+author: "Dipesh Patel"
 date: "`r Sys.Date()`"
 site: bookdown::bookdown_site
 ---
