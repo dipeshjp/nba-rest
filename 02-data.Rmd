@@ -1,2 +1,15 @@
 # Data sources
 
+```{r}
+# The dataset was too large to upload to GitHub so I am calling it locally
+# even though this is not good practice.
+setwd("~/Columbia/EDAV")
+
+# NBA 2018-2019 season play by play data #
+plays.raw <- read_csv("NBA-PBP-2018-2019.csv")
+```
+
+The data can be found here:
+
+I decided to use season data from the last full season before the Covid-19 pandemic, which
+was in 2018-2019. My thought process was that this season is recent enough to be meaningful and more representative of a typical NBA season than any of the seasons affected by the pandemic. The 2019-2020 season was dramatically effected. And the current season is still ongoing.
