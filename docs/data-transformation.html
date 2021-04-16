@@ -24,7 +24,7 @@
 <meta name="author" content="Dipesh Patel" />
 
 
-<meta name="date" content="2021-04-14" />
+<meta name="date" content="2021-04-15" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -98,6 +98,8 @@
             <section class="normal" id="section-">
 <div id="data-transformation" class="section level1" number="3">
 <h1><span class="header-section-number">Chapter 3</span> Data transformation</h1>
+<p>We want regular season play by play information for each team. However, the original dataset has a team variable across multiple columns. We can change that using pivot longer. Also, the team affiliation in the event variables is the only thing we care about for those columns. We remove the excess player information from those columns. Then after doing these two things, we need to map the columns of the dataset to our variables of interest. We create functions to achieve that. This play level data will be useful for us when we analyze how shot distance distribution is affected by rest levels.</p>
+<p>Most of our analysis though will use game level data so we summarize the transformed play level data to a game level. We also use the game level data to calculate the amount of rest days between games for each team. We necessarily append this variable to the play level data.</p>
 
 </div>
             </section>

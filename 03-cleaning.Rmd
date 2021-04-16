@@ -1,1 +1,146 @@
 # Data transformation
+
+```{r}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+
+# The dataset was too large to upload to GitHub so I am calling it locally
+# even though this is not good practice
+setwd("~/Columbia/EDAV")
+
+# NBA 2018-2019 season play by play data #
+plays.raw <- read_csv("NBA-PBP-2018-2019.csv")
+
+# functions for transforming
+
+# returns whether team made or missed a 2 point shot attempt
+f_forMake2 <- function(shooting_team, shot_type, shot_outcome, team) {
+  x = NULL
+  if (is.na(shooting_team)) {
+    x = NA
+  } else if (shooting_team == team) {
+    if (shot_type == "2" & shot_outcome == "miss") {
+      x = FALSE
+    } else if (shot_type == "2" & shot_outcome == "make") {
+      x = TRUE
+    } else {
+      x = NA
+    }
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns whether team made or missed a 3 point shot attempt
+f_forMake3 <- function(shooting_team, shot_type, shot_outcome, team) {
+  x = NULL
+  if (is.na(shooting_team)) {
+    x = NA
+  } else if (shooting_team == team) {
+    if (shot_type == "3" & shot_outcome == "miss") {
+      x = FALSE
+    } else if (shot_type == "3" & shot_outcome == "make") {
+      x = TRUE
+    } else {
+      x = NA
+    }
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns TRUE if team forced a turnover
+f_turnover_forced <- function(turnover_player, team) {
+  x = NULL
+  if (is.na(turnover_player)) {
+    x = NA
+  } else if (turnover_player != team) {
+    x = TRUE
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns whether a team succeeded or failed in retrieving an offensive rebound opportunity
+f_rebound_off <- function(rebounder, rebound_type, team) {
+  x <- NULL
+  if (is.na(rebounder)) {
+    x = NA
+  } else if (rebounder != team & rebound_type == "defensive") {
+    x = FALSE
+  } else if (rebounder == team & rebound_type == "offensive") {
+    x = TRUE
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns shot distance from the basket of a shot attempt
+f_shotdist <- function(ShotDist, Make2_For, Make3_For) {
+  x <- NULL
+  if (is.na(Make2_For) & is.na(Make3_For)) {
+    x = NA
+  } else {
+    x = ShotDist
+  }
+}
+
+# transformed play by play data
+plays <- plays.raw %>%
+  filter(GameType == "regular") %>%
+  dplyr::select(Date, AwayTeam, AwayScore:HomeTeam, HomeScore:ShotDist,
+                Rebounder:ReboundType, TurnoverPlayer) %>%
+  pivot_longer(c("AwayTeam", "HomeTeam"), names_to = "Type", values_to = "Team") %>%
+  mutate(Date = mdy(Date)) %>%
+  mutate(Scored = ifelse(Type == "HomeTeam", HomeScore, AwayScore),
+         Conceded = ifelse(Type == "HomeTeam", AwayScore, HomeScore),
+         ScoreMargin = Scored - Conceded) %>% # calculate score diff
+  mutate(ShotType = str_sub(ShotType, end = 1L), # process for next mutate
+         Shooter = str_sub(Shooter, -3L, -1L),
+         Rebounder = str_sub(Rebounder, -3L, -1L),
+         TurnoverPlayer = str_sub(TurnoverPlayer, -3L, -1L)) %>%
+  mutate(Make2 = pmap_lgl(list(Shooter, ShotType, ShotOutcome, Team), f_forMake2), # events
+         Make3 = pmap_lgl(list(Shooter, ShotType, ShotOutcome, Team), f_forMake3),
+         ShotDistance = pmap_dbl(list(ShotDist, Make2, Make3), f_shotdist),
+         TurnoverForced = map2_lgl(TurnoverPlayer, Team, f_turnover_forced),
+         ReboundOff = pmap_lgl(list(Rebounder, ReboundType, Team), f_rebound_off)) %>%
+  dplyr::select(-c(AwayScore:Type, Scored:Conceded, Make2)) # remove intermediate variables
+
+# game by game level without rest days between games variable binned
+games.raw <- plays %>% # consolidate play data to game level
+  group_by(Date, Team) %>%
+  summarise(ScoreMargin = last(ScoreMargin), # final score difference
+            Win = if_else(ScoreMargin > 0, 1, 0), # 1 = Win, 0 = Loss
+            FG3 = mean(na.omit(Make3)), # percentage of 3 point attempts made
+            AvgShotDistance = mean(na.omit(ShotDistance)),
+            OffReboundRate = mean(na.omit(ReboundOff)), # percent of off reb grabbed
+            TurnoversForced = sum(na.omit(TurnoverForced))) %>%
+  ungroup() %>%
+  arrange(Team, Date) %>% # need to arrange for mutate to work properly
+  group_by(Team) %>%
+  mutate(lag = dplyr::lag(Date),
+         Rest = as.numeric(Date - lag) - 1, # calc rest days between games
+         Rest = factor(replace_na(Rest, 10))) %>%
+  ungroup() %>%
+  dplyr::select(Date, Team, Rest, everything(), -lag) # remove intermediate var
+
+# games with rest days binned
+games <- games.raw %>%
+  mutate(Rest = fct_collapse(Rest, `0` = "0", `1` = "1", `2` = "2", other_level = "3+"))
+
+# add rest days to play data
+plays <- plays %>%
+  left_join(games[1:3], by = c("Date", "Team"))
+```
+
+We want regular season play by play information for each team. However, the original dataset has a team variable across multiple columns. We can change that using pivot longer. Also, the team affiliation in the event variables is the only thing we care about for those columns. We remove the excess player information from those columns. Then after doing these two things, we need to map the columns of the dataset to our variables of interest. We create functions to achieve that. This play level data will be useful for us when we analyze how shot distance distribution is affected by rest levels.
+
+Most of our analysis though will use game level data so we summarize the transformed play level data to a game level. We also use the game level data to calculate the amount of rest days between games for each team. We necessarily append this variable to the play level data.

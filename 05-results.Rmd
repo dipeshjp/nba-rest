@@ -1,1 +1,314 @@
 # Results
+
+```{r}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+
+# The dataset was too large to upload to GitHub so I am calling it locally
+# even though this is not good practice.
+setwd("~/Columbia/EDAV")
+
+# NBA 2018-2019 season play by play data #
+plays.raw <- read_csv("NBA-PBP-2018-2019.csv")
+
+# functions for transforming
+
+# returns whether team made or missed a 2 point shot attempt
+f_forMake2 <- function(shooting_team, shot_type, shot_outcome, team) {
+  x = NULL
+  if (is.na(shooting_team)) {
+    x = NA
+  } else if (shooting_team == team) {
+    if (shot_type == "2" & shot_outcome == "miss") {
+      x = FALSE
+    } else if (shot_type == "2" & shot_outcome == "make") {
+      x = TRUE
+    } else {
+      x = NA
+    }
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns whether team made or missed a 3 point shot attempt
+f_forMake3 <- function(shooting_team, shot_type, shot_outcome, team) {
+  x = NULL
+  if (is.na(shooting_team)) {
+    x = NA
+  } else if (shooting_team == team) {
+    if (shot_type == "3" & shot_outcome == "miss") {
+      x = FALSE
+    } else if (shot_type == "3" & shot_outcome == "make") {
+      x = TRUE
+    } else {
+      x = NA
+    }
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns TRUE if team forced a turnover
+f_turnover_forced <- function(turnover_player, team) {
+  x = NULL
+  if (is.na(turnover_player)) {
+    x = NA
+  } else if (turnover_player != team) {
+    x = TRUE
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns whether a team succeeded or failed in retrieving an offensive rebound opportunity
+f_rebound_off <- function(rebounder, rebound_type, team) {
+  x <- NULL
+  if (is.na(rebounder)) {
+    x = NA
+  } else if (rebounder != team & rebound_type == "defensive") {
+    x = FALSE
+  } else if (rebounder == team & rebound_type == "offensive") {
+    x = TRUE
+  } else {
+    x = NA
+  }
+  x
+}
+
+# returns shot distance from the basket of a shot attempt
+f_shotdist <- function(ShotDist, Make2_For, Make3_For) {
+  x <- NULL
+  if (is.na(Make2_For) & is.na(Make3_For)) {
+    x = NA
+  } else {
+    x = ShotDist
+  }
+}
+
+# transformed play by play data
+plays <- plays.raw %>%
+  filter(GameType == "regular") %>%
+  dplyr::select(Date, AwayTeam, AwayScore:HomeTeam, HomeScore:ShotDist,
+                Rebounder:ReboundType, TurnoverPlayer) %>%
+  pivot_longer(c("AwayTeam", "HomeTeam"), names_to = "Type", values_to = "Team") %>%
+  mutate(Date = mdy(Date)) %>%
+  mutate(Scored = ifelse(Type == "HomeTeam", HomeScore, AwayScore),
+         Conceded = ifelse(Type == "HomeTeam", AwayScore, HomeScore),
+         ScoreMargin = Scored - Conceded) %>% # calculate score diff
+  mutate(ShotType = str_sub(ShotType, end = 1L), # process for next mutate
+         Shooter = str_sub(Shooter, -3L, -1L),
+         Rebounder = str_sub(Rebounder, -3L, -1L),
+         TurnoverPlayer = str_sub(TurnoverPlayer, -3L, -1L)) %>%
+  mutate(Make2 = pmap_lgl(list(Shooter, ShotType, ShotOutcome, Team), f_forMake2), # events
+         Make3 = pmap_lgl(list(Shooter, ShotType, ShotOutcome, Team), f_forMake3),
+         ShotDistance = pmap_dbl(list(ShotDist, Make2, Make3), f_shotdist),
+         TurnoverForced = map2_lgl(TurnoverPlayer, Team, f_turnover_forced),
+         ReboundOff = pmap_lgl(list(Rebounder, ReboundType, Team), f_rebound_off)) %>%
+  dplyr::select(-c(AwayScore:Type, Scored:Conceded, Make2)) # remove intermediate variables
+
+# game by game level without rest days between games variable binned
+games.raw <- plays %>% # consolidate play data to game level
+  group_by(Date, Team) %>%
+  summarise(ScoreMargin = last(ScoreMargin), # final score difference
+            Win = if_else(ScoreMargin > 0, 1, 0), # 1 = Win, 0 = Loss
+            FG3 = mean(na.omit(Make3)), # percentage of 3 point attempts made
+            AvgShotDistance = mean(na.omit(ShotDistance)),
+            OffReboundRate = mean(na.omit(ReboundOff)), # percent of off reb grabbed
+            TurnoversForced = sum(na.omit(TurnoverForced))) %>%
+  ungroup() %>%
+  arrange(Team, Date) %>% # need to arrange for mutate to work properly
+  group_by(Team) %>%
+  mutate(lag = dplyr::lag(Date),
+         Rest = as.numeric(Date - lag) - 1, # calc rest days between games
+         Rest = factor(replace_na(Rest, 10))) %>%
+  ungroup() %>%
+  dplyr::select(Date, Team, Rest, everything(), -lag) # remove intermediate var
+```
+
+```{r}
+# frequency of rest days between games
+games.raw %>%
+  mutate(Rest = fct_relevel(fct_expand(Rest, "6"),
+                            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10")) %>%
+  group_by(Rest) %>%
+  summarise(count = n()) %>%
+  ggplot() +
+  geom_col(aes(x = Rest, y = count), color = "black", fill = "orange2") +
+  scale_x_discrete(drop = FALSE) +
+  labs(title = "Frequency of Rest Days Between Games",
+       x = "Rest Days Between Games") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+Before we assess the effect of rest on the various measures of performance we take a preliminary look at the frequencies of different rest intervals. It is easy to see that 1 day of rest between games is far and away the most common. 1 day of rest occurs 3 to 4 times more frequently than the next most frequent rest period which is 0 and 2 days. We see that there is a substantially smaller sample of games after this. To make analysis easier and less cluttered, we decided to bin values exceeding 2 rest days into 1 category called 3+. Our focus will mostly be on 0, 1, and 2 rest days since the sample sizes are large. We note that 10 days of rest are associated with season opening games where there were no games prior.
+
+
+```{r}
+# games with rest days binned
+games <- games.raw %>%
+  mutate(Rest = fct_collapse(Rest, `0` = "0", `1` = "1", `2` = "2", other_level = "3+"))
+
+# add rest days to play data
+plays <- plays %>%
+  left_join(games[1:3], by = c("Date", "Team"))
+```
+
+```{r}
+# frequency of rest days between games by team
+# darkest shade for 0 rest days since most troublesome level
+# rest is ordinal so color scheme reflects this
+# experimented with different color combinations and the scheme used here
+# seemed to give best contrast while also remaining visible
+games %>%
+  group_by(Team, Rest) %>%
+  summarise(count = n()) %>%
+  ggplot() +
+  geom_point(aes(x = count, y = fct_rev(fct_reorder2(factor(Team), Rest == "0", count)),
+                 color = Rest)) +
+  scale_color_manual(values = c("red4", "red3", "orangered", "orange")) +
+  labs(title = "Frequency of Rest Days Between Games By Team",
+       y = "Team") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+Since we are looking at the data on a game level and not team by team it is important to make sure that there is not a clustering of certain teams that have played an abnormal number of games for a given rest level. Since teams are of different quality, this would have the potential to confound our analysis. We see that teams play roughly 12 games a season with 0 days of rest between games, 50 games with 1 day, 16 with 2 days, and 4 with 3 or more days. There really isn't much variation about those averages and no outliers or clustering of note. Therefore, team quality should not confound our analysis. Also since playing back to back games is the most burdensome, we have organized the data in that way. The spread for back to backs is the smallest which is not surprising since the NBA is most conscious of this so it tries to give each team the same number of back to backs as possible.
+
+```{r}
+# effect of rest on win probability
+# diverging color scheme since win and loss are opposites
+table <- xtabs(~ Rest + Win, data = games %>% mutate(Win = if_else(Win == 1, "Yes", "No")))
+vcd::mosaic(Win ~ Rest, direction = c("v", "h"),
+            highlighting_fill = c("white", "black"),
+            main = "The Effect of Rest on Win Probability",
+            data = table)
+```
+
+We see a clear pattern that teams win more often as the number of rest days between games increases. The effect seems to be largest when going from 0 days of rest to 1 and then trails off as if to suggest there are diminishing returns to rest. Teams with no days of rest win materially less than half of their games.
+
+```{r}
+# effect of rest on final score difference
+# not sorting by median because ordinal
+games %>%
+  ggplot() +
+  geom_boxplot(aes(x = ScoreMargin, y = Rest)) +
+  labs(title = "The Effect of Rest on Final Score Difference",
+       x = "Final Score Difference",
+       y = "Rest Days Between Games") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+Wins and losses does not tell us anything about how much a team wins or loses by. It could be said that score differential is more insightful than win/loss because the degree to which a team wins or losses has more predictive power. As an example, it would be questionable to say a team that wins by 20 compared to another team that wins by 1 against a common opponent are of the same quality. We see that the pattern is the same when looking at final score differential. The effect of rest is greatest when going from 0 to 1 day of rest. We see clearly that teams with 0 days of rest have a negative point differential on average whereas for the other levels the point differential is positive. It seems as if going from 0 to 1 day of rest confers about a positive 5 point advantage.
+
+```{r}
+# final score difference over time
+games %>%
+  group_by(Date, Rest) %>%
+  summarise(AvgScoreMargin = mean(ScoreMargin)) %>%
+  ggplot() +
+  geom_line(aes(x = Date, y = AvgScoreMargin, color = Rest), alpha = 0.25) +
+  geom_smooth(aes(x = Date, y = AvgScoreMargin, color = Rest),
+              method = "loess", se = FALSE, lwd = 1.5) +
+  scale_color_manual(values = c("red4", "red3", "orangered", "orange")) +
+  labs(title = "Average Final Score Difference Over Time",
+       x = "Day (2018-2019)",
+       y = "Average Final Score Difference") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+It could be hypothesized that the effects of rest are amplified as the season progresses and wear and tear on players accumulates. If this were the case then we should see a fanning out of the smoothing lines as the season progresses. However it does not appear to be the case here. It is interesting to note that during the first couple months of the season point differential correlates how one might expect. The more rest the greater the point differential. In other parts of the season, there appears to be no discernible pattern.
+
+```{r}
+# 3 point efficiency by rest days
+games %>%
+  ggplot() +
+  geom_boxplot(aes(x = FG3, y = Rest)) +
+  labs(title = "3 Point Shooting Efficiency by Rest Days Between Games",
+       x = "% of 3 Point Attempts Made (Per Game)",
+       y = "Rest Days Between Games") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+It is not uncommon to hear that shooting starts from the legs. As legs go, so does shooting, particularly long distance shooting since that would presumably require the most energy. We can check the effect of rest on long distance shooting by looking at the percentage of 3 point attempts made by rest days. We see that rest has a small but meaningful effect on shooting efficiency. The average percentage of 3 point attempts made increases with more rest days.
+
+
+```{r}
+# shot distance distribution by rest days
+# filter by < 30 b/c otherwise histogram is thrown off by full court shots
+# binwidth of 1 to capture each foot of distance
+plays %>%
+  filter(!is.na(ShotDistance), ShotDistance < 30) %>%
+  ggplot() +
+  geom_histogram(aes(x = ShotDistance, y = ..density..),
+                 binwidth = 1, center = 0.5, color = "black", fill = "orange2") +
+  geom_density(aes(x = ShotDistance), color = "purple", lwd = 1) +
+  facet_wrap(~Rest, nrow = 4) +
+  scale_x_continuous(breaks = c(0, 5, 10, 15, 20, 25, 30)) +
+  labs(title = "Shot Distance Density By Rest Days Between Games",
+       x = "Shot Distance (in feet)",
+       y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+If teams lack of rest causes fatigue to roll over from one game to the next we might expect that teams would choose to take easier shots that the defense is willing to concede rather than working for high value shots that the defense does not want the opponent to get. High value shots are those closest to the basket and 3 point attempts. These shots have the highest expected value. Medium range shots have the lowest payoff but are the easiest to get. Unsurprisingly we see bimodality located at the extremes of shot distance. 0 represents at the basket shot attempts and 3 pointers are roughly 23 feet from the basket. For the most part the shapes of the histograms are remarkably similar. We see that the 3 point attempt part of the distribution remains similar throughout. So it appears that teams shoot the same number of threes regardless of rest days but efficiency drops with less rest. The one difference appears to be at basket attempts, which are the most energy taxing. Basket attempts appear to increase with more rest. As an aside, we can read more into the 3+ rest day category here since this data is taken from play by play data which has a much larger sample size.
+
+```{r}
+# overlapping density curves from histogram for shot distribution
+# if adjust bandwidth to account for each foot of distance the curves lose all shape
+# not sure how to change boxes to lines in the legend
+plays %>%
+  filter(!is.na(ShotDistance), ShotDistance < 30) %>%
+  ggplot() +
+  geom_density(aes(x = ShotDistance, color = Rest), lwd = 0.8) +
+  scale_x_continuous(breaks = c(0, 5, 10, 15, 20, 25, 30)) +
+  scale_color_manual(values = c("red4", "red3", "orangered", "orange")) +
+  labs(title = "Shot Distance Density Curve By Rest Days Between Games",
+       x = "Shot Distance (in feet)",
+       y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+Overlaying the density curves of the shot distribution histogram does not appear to support our claim that at basket attempts increase with more rest. In fact, the density curves show that 3+ days of rest makes it least likely to find shots close to the basket. However, we do not read too much into this because we can clearly see that the density curves overlaid on the density histograms do not capture well the start of the histograms. We rely more on the histogram and proceed with our initial conclusion that basket attempts increase with rest.
+
+```{r}
+# offensive rebound rate by rest days
+games %>%
+  ggplot() +
+  geom_boxplot(aes(x = OffReboundRate, y = Rest)) +
+  labs(title = "Offensive Rebound Rate by Rest Days Between Games",
+       x = "% Available Offensive Rebounds Retrieved (Per Game)",
+       y = "Rest Days Between Games") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+There are certain skills in basketball that are considered to be overly reliant on effort. Grabbing offensive rebounds is one of them. Here we can clearly see that with more rest the percentage of available offensive rebounds retrieved increases.
+
+```{r}
+# turnovers forced by rest days
+games %>%
+  ggplot() +
+  geom_boxplot(aes(x = TurnoversForced, y = Rest)) +
+  scale_x_continuous(breaks = c(5, 10, 15, 20, 25)) +
+  labs(title = "Turnovers Forced by Rest Days Between Games",
+       x = "Turnovers Forced (Per Game)",
+       y = "Rest Days Between Games") +
+  theme(plot.title = element_text(hjust = 0.5),
+        text = element_text(size = 16))
+```
+
+Forcing the opposing team to lose possession of the basketball is another skill that is considered to require a lot of effort. Again, we can clearly see an effect although only going from 0 rest days to 1. On average, it looks like teams average 1 more turnover forced per game going from 0 to 1 days of rest.

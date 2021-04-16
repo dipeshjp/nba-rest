@@ -24,7 +24,7 @@
 <meta name="author" content="Dipesh Patel" />
 
 
-<meta name="date" content="2021-04-14" />
+<meta name="date" content="2021-04-15" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -98,9 +98,21 @@
             <section class="normal" id="section-">
 <div id="data-sources" class="section level1" number="2">
 <h1><span class="header-section-number">Chapter 2</span> Data sources</h1>
-<p>The data can be found here:</p>
-<p>I decided to use season data from the last full season before the Covid-19 pandemic, which
-was in 2018-2019. My thought process was that this season is recent enough to be meaningful and more representative of a typical NBA season than any of the seasons affected by the pandemic. The 2019-2020 season was dramatically effected. And the current season is still ongoing.</p>
+<p>The dataset was retrieved from Kaggle. This data was originally scraped from the highly reputable website basketball-reference.com which stores play by play data for each NBA game, provided by SportRadar, the official statistics provider of the NBA. Each game on basketball-reference.com has its own url. The data was scraped using a Python script that takes in each game url and parses the information contained on the page to reproduce the same data and then stores the information for each game into one complete dataset by season. From a small sampling, the data from Kaggle matches exactly the data contained on basketball-reference.com, although in a different format more conducive for analysis. Of course, I could have scraped the data from basketball-reference.com or even NBA.com myself. However, this would require writing a lengthy script which is unlikely to be any better than the Python one already written given my elementary skills in web scraping.</p>
+<p>As for the dataset itself, it contains 613671 plays across 40 variables. In other words, this is a 613671 by 40 dataset. Another way to think of a play is as an event. Any time some meaningful event happens in a game it is recorded. The events that are recorded in the dataset are: shot attempt, block, foul, rebound, violation, timeout, free throw attempt, substitution, turnover, and jumpball. In other words, any time one of these events happen there is a row observation in the dataset. Other information is also recorded, but these are the events that trigger an observation.</p>
+<p>Most of the variables contained in the raw dataset will be of no use to us. The ones that will be are: Date, AwayTeam, AwayScore, HomeTeam, HomeScore, Shooter, ShotType, ShotOutcome, ShotDist, Rebounder, ReboundType, and TurnoverPlayer. Here is some information on them:</p>
+<p>Date - time in month-day-year format
+AwayTeam - traveling team
+Shooter - player attempting shot along with team affiliation
+ShotType - value of a made shot attempt plus type of shot
+ShotOutcome - make or miss
+ShotDist - distance from the basket of shot attempt
+Rebounder - player who grabbed rebound and team affiliation
+ReboundType - did rebound occur while player was on offense or defense
+TurnoverPlayer - player who gave away possession to other team and team affiliation</p>
+<p>I decided to use data from the last full NBA season before the Covid-19 pandemic, which
+was in 2018-2019. My thought process was that this season is recent enough to be meaningful and also more representative of a typical NBA season than any of the seasons affected by the pandemic. The 2019-2020 season was dramatically affected. And the current season is still ongoing so the data would be incomplete for our purposes. After exploring the dataset, there were no issues discovered.</p>
+<p>The data can be found here: <a href="https://www.kaggle.com/schmadam97/nba-playbyplay-data-20182019" class="uri">https://www.kaggle.com/schmadam97/nba-playbyplay-data-20182019</a></p>
 
 </div>
             </section>

@@ -1,3 +1,4 @@
 # Interactive component
 
+I was unable to complete this part. I would have created an interactive bar chart that shows the different 3 point percentages by rest days with a drop down menu to select different teams.
 
